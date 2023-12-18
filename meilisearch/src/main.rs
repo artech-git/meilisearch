@@ -20,7 +20,7 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 fn setup(opt: &Opt) -> anyhow::Result<()> {
     let mut log_builder = env_logger::Builder::new();
     let log_filters = format!(
-        "{},h2=warn,hyper=warn,tokio_util=warn,tracing=warn,rustls=warn,mio=warn,reqwest=warn",
+        "{},h2=warn,hyper=warn,tokio_util=warn,tracing=warn,rustls=warn,mio=warn,reqwest=warn,tokenizers=warn",
         opt.log_level
     );
     log_builder.parse_filters(&log_filters);

@@ -70,7 +70,7 @@ impl std::fmt::Debug for Embedder {
 
 impl Embedder {
     pub fn new(options: EmbedderOptions) -> std::result::Result<Self, NewEmbedderError> {
-        let device = candle_core::Device::Cpu;
+        let device = candle_core::Device::cuda_if_available(0).unwrap();
         let repo = match options.revision.clone() {
             Some(revision) => Repo::with_revision(options.model.clone(), RepoType::Model, revision),
             None => Repo::model(options.model.clone()),
@@ -135,6 +135,9 @@ impl Embedder {
         &self,
         mut texts: Vec<String>,
     ) -> std::result::Result<Vec<Embeddings<f32>>, EmbedError> {
+        let timer = logging_timer::timer!(log::Level::Trace; "embed");
+        logging_timer::executing!(timer, "tokenizer");
+
         let tokens = match texts.len() {
             1 => vec![self
                 .tokenizer
@@ -142,6 +145,8 @@ impl Embedder {
                 .map_err(EmbedError::tokenize)?],
             _ => self.tokenizer.encode_batch(texts, true).map_err(EmbedError::tokenize)?,
         };
+        logging_timer::executing!(timer, "tokens");
+
         let token_ids = tokens
             .iter()
             .map(|tokens| {
@@ -149,11 +154,13 @@ impl Embedder {
                 Tensor::new(tokens.as_slice(), &self.model.device).map_err(EmbedError::tensor_shape)
             })
             .collect::<Result<Vec<_>, EmbedError>>()?;
+        logging_timer::executing!(timer, "forward");
 
         let token_ids = Tensor::stack(&token_ids, 0).map_err(EmbedError::tensor_shape)?;
         let token_type_ids = token_ids.zeros_like().map_err(EmbedError::tensor_shape)?;
         let embeddings =
             self.model.forward(&token_ids, &token_type_ids).map_err(EmbedError::model_forward)?;
+        logging_timer::executing!(timer, "average");
 
         // Apply some avg-pooling by taking the mean embedding value for all tokens (including padding)
         let (_n_sentence, n_tokens, _hidden_size) =
@@ -178,7 +185,8 @@ impl Embedder {
     }
 
     pub fn prompt_count_in_chunk_hint(&self) -> usize {
-        std::thread::available_parallelism().map(|x| x.get()).unwrap_or(8)
+        1
+        //std::thread::available_parallelism().map(|x| x.get()).unwrap_or(8)
     }
 
     pub fn dimensions(&self) -> usize {
